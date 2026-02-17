@@ -68,68 +68,75 @@ class Dashboard:
         self._all_ch_names = []       # ordered list after loading
 
         # ───── file loading ──────────────────────────────────────────────
+        # ───── file loading ──────────────────────────────────────────────
         self.file_input = pn.widgets.TextInput(
-            name="HDF5 File Path", placeholder="/path/to/file.h5", width=330,
+            name="HDF5 File Path", placeholder="/path/to/file.h5", sizing_mode="stretch_width",
         )
         self.load_button = pn.widgets.Button(
-            name="Load File", button_type="primary", width=330,
+            name="Load File", button_type="primary", sizing_mode="stretch_width",
         )
 
         # ───── group / key selection ─────────────────────────────────────
-        self.group_select = pn.widgets.Select(name="Signal Group", width=330)
-        self.data_key_select = pn.widgets.Select(name="Data Key", width=330)
+        self.group_select = pn.widgets.Select(name="Signal Group", sizing_mode="stretch_width")
+        self.data_key_select = pn.widgets.Select(name="Data Key", sizing_mode="stretch_width")
 
         # ───── channel visibility ────────────────────────────────────────
         self.channel_vis = pn.widgets.CheckBoxGroup(
-            name="Visible Channels", inline=False,
+            name="Visible Channels", inline=False, sizing_mode="stretch_width",
+        )
+        self.btn_select_all = pn.widgets.Button(
+            name="Select All", button_type="light", height=30, sizing_mode="stretch_width"
+        )
+        self.btn_select_none = pn.widgets.Button(
+            name="Select None", button_type="light", height=30, sizing_mode="stretch_width"
         )
 
 
         # ───── intervals ─────────────────────────────────────────────────
         self.interval_select = pn.widgets.MultiSelect(
-            name="Intervals", size=4, width=350,
+            name="Intervals", size=4, sizing_mode="stretch_width",
         )
         self.interval_clear = pn.widgets.Button(
-            name="Clear Selection", width=350, button_type="default",
+            name="Clear Selection", sizing_mode="stretch_width", button_type="default",
         )
         self.interval_label_field = pn.widgets.Select(
-            name="Label Field", options=["(none)"], width=350,
+            name="Label Field", options=["(none)"], sizing_mode="stretch_width",
         )
 
         # ───── time navigation ───────────────────────────────────────────
         self.time_slider = pn.widgets.FloatSlider(
-            name="Time Position", start=0.0, end=1.0, step=1.0, value=0.0, width=350,
+            name="Time Position", start=0.0, end=1.0, step=1.0, value=0.0, sizing_mode="stretch_width",
         )
-        self.duration_text = pn.widgets.StaticText(name="Duration", value="0.0 s", width=350)
+        self.duration_text = pn.widgets.StaticText(name="Duration", value="0.0 s", sizing_mode="stretch_width")
         
         self.time_window = pn.widgets.FloatSlider(
-            name="Window Size (s)", value=30.0, step=1.0, start=1.0, end=60.0, width=350,
+            name="Window Size (s)", value=30.0, step=1.0, start=1.0, end=600.0, sizing_mode="stretch_width",
         )
-        self.nav_back = pn.widgets.Button(name="◀◀", width=70, button_type="light")
-        self.nav_fwd = pn.widgets.Button(name="▶▶", width=70, button_type="light")
+        self.nav_back = pn.widgets.Button(name="◀◀", sizing_mode="stretch_width", button_type="light")
+        self.nav_fwd = pn.widgets.Button(name="▶▶", sizing_mode="stretch_width", button_type="light")
 
         # ───── amplitude / scaling ───────────────────────────────────────
         self.global_scale = pn.widgets.FloatSlider(
-            name="Global Amplitude", start=0.05, end=5.0, step=0.05, value=1.0, width=350,
+            name="Global Amplitude", start=0.05, end=5.0, step=0.05, value=1.0, sizing_mode="stretch_width",
         )
         self.ch_scale_select = pn.widgets.Select(
-            name="Channel to Scale", width=350,
+            name="Channel to Scale", sizing_mode="stretch_width",
         )
         self.ch_scale_slider = pn.widgets.FloatSlider(
-            name="Channel Amplitude", start=0.1, end=10.0, step=0.1, value=1.0, width=350,
+            name="Channel Amplitude", start=0.1, end=10.0, step=0.1, value=1.0, sizing_mode="stretch_width",
         )
         # Removed lock_group
 
-        # ───── colour ───────────────────────────────────────────────────
+        # ───── color ────────────────────────────────────────────────────
         self.line_color = pn.widgets.ColorPicker(
-            name="Line Colour Override", value="#2166ac", width=350,
+            name="Color Override", value="#2166ac", sizing_mode="stretch_width",
         )
         self.use_color_override = pn.widgets.Checkbox(
-            name="Use single colour for all", value=False,
+            name="Use single color", value=False, sizing_mode="stretch_width",
         )
 
         # ───── status ───────────────────────────────────────────────────
-        self.status = pn.pane.Alert("Ready", alert_type="info", width=350)
+        self.status = pn.pane.Alert("Ready", alert_type="info", sizing_mode="stretch_width")
 
         # ───── plot area ─────────────────────────────────────────────────
         # Using a RangeX stream to perform bidirectional binding
@@ -150,6 +157,10 @@ class Dashboard:
         self.nav_fwd.on_click(lambda e: self._navigate(+1))
         self.ch_scale_select.param.watch(self._on_ch_select_change, "value")
         self.ch_scale_slider.param.watch(self._on_ch_scale_change, "value")
+        
+        # Channel selection helpers
+        self.btn_select_all.on_click(lambda e: self.channel_vis.param.update(value=self.channel_vis.options))
+        self.btn_select_none.on_click(lambda e: self.channel_vis.param.update(value=[]))
 
         # Auto-refresh on these changes
         for w in (
@@ -435,17 +446,6 @@ class Dashboard:
         # Attach the RangeX stream to the overlay so interactions update it
         self.range_stream.source = overlay
         
-        # Configure WheelPanTool explicitly
-        from bokeh.models import WheelPanTool
-        # Note: 'xwheel_pan' is the string alias used in active_tools usually.
-        # But if we create a custom instance, we might need to trust its internal name.
-        # The internal name of WheelPanTool is 'wheel_pan'.
-        # However, active_tools='wheel_pan' might ambiguous if we have multiple?
-        # Let's try adding it to tools, and setting active_tools to the instance itself if allowed, 
-        # or just 'wheel_pan' (which should pick up the only wheel pan tool).
-        
-        xwheel = WheelPanTool(dimension="width")
-        
         overlay = overlay.opts(
             hv.opts.Curve(tools=["hover"]),
             hv.opts.Overlay(
@@ -457,9 +457,7 @@ class Dashboard:
                 xlim=(t_start, t_end),
                 ylim=(-0.8, (n_vis - 1) * spacing + 0.8),
                 show_legend=False,
-                # Setting active_tools=['wheel_pan'] should rely on the tool we added
-                active_tools=["wheel_pan", "pan"],
-                tools=[xwheel, "pan", "hover", "save", "reset"],
+                tools=["pan", "hover", "save", "reset"],
                 toolbar="above",
             ),
         )
@@ -478,54 +476,89 @@ class Dashboard:
     # =====================================================================
 
     def view(self):
-        nav_row = pn.Row(self.nav_back, self.nav_fwd)
-
-        sidebar = pn.Column(
-            pn.pane.Markdown("## File"),
+        # Navigation buttons row
+        nav_buttons = pn.Row(
+            self.nav_back,
+            self.nav_fwd,
+            sizing_mode="stretch_width"
+        )
+        
+        # 1. File & Data
+        # We group file input and main signal selection
+        card_data = pn.Card(
             self.file_input,
             self.load_button,
             pn.layout.Divider(),
-
-            pn.pane.Markdown("## Signal"),
             self.group_select,
             self.data_key_select,
-            pn.layout.Divider(),
+            title="📁 Data Source",
+            collapsed=False,
+            sizing_mode="stretch_width",
+        )
 
-            pn.pane.Markdown("## Channels"),
+        # 2. Channels
+        # Initializing it collapsed if there are many channels might be better, 
+        # but usually users want to see them.
+        card_channels = pn.Card(
+            pn.Row(self.btn_select_all, self.btn_select_none, sizing_mode="stretch_width"),
             self.channel_vis,
-            pn.layout.Divider(),
+            title="📉 Channels",
+            collapsed=False,
+            scroll=True,  # Enable scrolling within the card
+            max_height=300, # Limit height so it doesn't take over
+            sizing_mode="stretch_width",
+        )
 
-            pn.pane.Markdown("## Intervals"),
+        # 3. Intervals
+        card_intervals = pn.Card(
             self.interval_select,
-            self.interval_clear,  # Added button
             self.interval_label_field,
-            pn.layout.Divider(),
+            self.interval_clear,
+            title="🏷️ Intervals",
+            collapsed=True,
+            sizing_mode="stretch_width",
+        )
 
-            pn.pane.Markdown("## Navigation"),
+        # 4. Navigation controls
+        card_nav = pn.Card(
             self.duration_text,
             self.time_slider,
             self.time_window,
-            nav_row,
-            pn.layout.Divider(),
+            nav_buttons,
+            title="⏱️ Navigation",
+            collapsed=False,
+            sizing_mode="stretch_width",
+        )
 
-            pn.pane.Markdown("## Amplitude"),
+        # 5. Display Settings (Amplitude, Color)
+        card_display = pn.Card(
+            "### Amplitude",
             self.global_scale,
             self.ch_scale_select,
             self.ch_scale_slider,
             pn.layout.Divider(),
-
-            pn.pane.Markdown("## Colour"),
+            "### Appearance",
             self.use_color_override,
             self.line_color,
-            pn.layout.Divider(),
+            title="⚙️ Display Settings",
+            collapsed=True,
+            sizing_mode="stretch_width",
+        )
 
+        # Assemble Sidebar
+        sidebar = pn.Column(
+            card_data,
+            card_channels,
+            card_nav,
+            card_intervals,
+            card_display,
             self.status,
             width=380,
             scroll=True,
+            sizing_mode="stretch_width",
         )
 
         main = pn.Column(
-            pn.pane.Markdown("# BrainScope"),
             self.plot_pane,
             sizing_mode="stretch_both",
         )
@@ -534,5 +567,8 @@ class Dashboard:
             title="BrainScope",
             sidebar=[sidebar],
             main=[main],
-            sidebar_width=400,  # Ensure template sidebar fits content
+            sidebar_width=400,
+            theme="dark",
+            accent="#00A170",
+            theme_toggle=False,
         ).servable()
