@@ -176,13 +176,15 @@ class DataHandler:
 
         names = None
 
-        # Strategy 1: channels/id  (one shared array)
+        # Strategy 1: channels/id or channels/ids  (one shared array)
         if "channels" in self.file:
             ch_group = self.file["channels"]
-            if isinstance(ch_group, h5py.Group) and "id" in ch_group:
-                ids = ch_group["id"][:]
-                if len(ids) == n_ch:
-                    names = [v.decode() if isinstance(v, bytes) else str(v) for v in ids]
+            if isinstance(ch_group, h5py.Group):
+                id_key = "ids" if "ids" in ch_group else ("id" if "id" in ch_group else None)
+                if id_key is not None:
+                    ids = ch_group[id_key][:]
+                    if len(ids) == n_ch:
+                        names = [v.decode() if isinstance(v, bytes) else str(v) for v in ids]
 
         # Strategy 2: {group}_ids/ids
         if names is None:
@@ -199,6 +201,45 @@ class DataHandler:
 
         self._channel_name_cache[group_name] = names
         return names
+
+    # ------------------------------------------------------------------
+    # Channel type look-up
+    # ------------------------------------------------------------------
+
+    def get_channel_types(self, group_name):
+        """
+        Return channel types for a time-series group.
+
+        Look-up order:
+          1. ``channels/types`` or ``channels/type``
+          2. Fall back to ``"unknown"`` for every channel.
+        """
+        cache_key = f"{group_name}__types"
+        if cache_key in self._channel_name_cache:
+            return self._channel_name_cache[cache_key]
+
+        meta = (
+            self.metadata["regular_time_series"].get(group_name)
+            or self.metadata["irregular_time_series"].get(group_name)
+        )
+        n_ch = meta["n_channels"] if meta else 0
+
+        types = None
+
+        if "channels" in self.file:
+            ch_group = self.file["channels"]
+            if isinstance(ch_group, h5py.Group):
+                type_key = "types" if "types" in ch_group else ("type" if "type" in ch_group else None)
+                if type_key is not None:
+                    raw = ch_group[type_key][:]
+                    if len(raw) == n_ch:
+                        types = [v.decode().strip() if isinstance(v, bytes) else str(v).strip() for v in raw]
+
+        if types is None:
+            types = ["unknown"] * n_ch
+
+        self._channel_name_cache[cache_key] = types
+        return types
 
     # ------------------------------------------------------------------
     # Convenience accessors
