@@ -66,6 +66,8 @@ class Dashboard:
         self.data_handler = None
         self._ch_scales = {}          # ch_name → float multiplier
         self._all_ch_names = []       # ordered list after loading
+        self._ch_type_map = {}        # ch_name → type string
+        self._suppress_refresh = False  # guard against range-stream → slider → refresh loop
 
         # ───── file loading ──────────────────────────────────────────────
         # ───── file loading ──────────────────────────────────────────────
@@ -91,6 +93,11 @@ class Dashboard:
             name="Select None", button_type="light", height=30, sizing_mode="stretch_width"
         )
 
+
+        # ───── channel type filter ────────────────────────────────────────
+        self.channel_type_filter = pn.widgets.CheckBoxGroup(
+            name="Channel Types", inline=True, sizing_mode="stretch_width",
+        )
 
         # ───── intervals ─────────────────────────────────────────────────
         self.interval_select = pn.widgets.MultiSelect(
@@ -161,6 +168,7 @@ class Dashboard:
         # Channel selection helpers
         self.btn_select_all.on_click(lambda e: self.channel_vis.param.update(value=self.channel_vis.options))
         self.btn_select_none.on_click(lambda e: self.channel_vis.param.update(value=[]))
+        self.channel_type_filter.param.watch(self._on_type_filter_change, "value")
 
         # Auto-refresh on these changes
         for w in (
@@ -175,14 +183,20 @@ class Dashboard:
     # =====================================================================
 
     def _on_x_range_change(self, x_range):
-        """Called when panning via mouse interaction."""
+        """Called when panning/zooming via mouse interaction.
+        
+        Updates the slider to reflect the new position but suppresses
+        the automatic _refresh so the view is not reset.
+        """
         if x_range is None:
             return
         start, end = x_range
-        # Update slider without triggering _refresh to avoid loops
-        # We need to guard against recursion
         if abs(self.time_slider.value - start) > 0.001:
-             self.time_slider.param.update(value=start)
+            self._suppress_refresh = True
+            try:
+                self.time_slider.param.update(value=start)
+            finally:
+                self._suppress_refresh = False
 
     # =====================================================================
     # Phase 1 — loading
@@ -218,8 +232,15 @@ class Dashboard:
         self.data_key_select.value = "signal" if "signal" in keys else (keys[0] if keys else None)
 
         ch_names = self.data_handler.get_channel_names(grp)
+        ch_types = self.data_handler.get_channel_types(grp)
         self._all_ch_names = ch_names
         self._ch_scales = {n: 1.0 for n in ch_names}
+        self._ch_type_map = dict(zip(ch_names, ch_types))
+
+        # Populate channel type filter with unique types (preserving order)
+        unique_types = list(dict.fromkeys(ch_types))
+        self.channel_type_filter.options = unique_types
+        self.channel_type_filter.value = unique_types  # all selected by default
 
         # Reset display settings
         self.time_slider.value = 0.0
@@ -240,7 +261,6 @@ class Dashboard:
 
         self.ch_scale_select.options = ch_names
         self.ch_scale_select.value = ch_names[0] if ch_names else None
-        # lock_group removed
 
         self._refresh()
 
@@ -275,6 +295,21 @@ class Dashboard:
         self.interval_label_field.value = opts[1] if len(opts) > 1 else "(none)"
 
     # =====================================================================
+    # Channel type filtering
+    # =====================================================================
+
+    def _on_type_filter_change(self, event):
+        """Filter visible channels based on selected channel types."""
+        selected_types = set(self.channel_type_filter.value)
+        filtered = [n for n in self._all_ch_names if self._ch_type_map.get(n) in selected_types]
+
+        self.channel_vis.options = filtered
+        self.channel_vis.value = filtered
+
+        self.ch_scale_select.options = filtered
+        self.ch_scale_select.value = filtered[0] if filtered else None
+
+    # =====================================================================
     # Navigation
     # =====================================================================
 
@@ -292,6 +327,8 @@ class Dashboard:
 
     def _refresh(self, event=None):
         """Re-render the plot based on current widget values."""
+        if self._suppress_refresh:
+            return
         if not self.data_handler or not self.group_select.value:
             self.plot_pane.object = hv.Curve([], "Time", " ").opts(
                 height=600, responsive=True,
@@ -500,12 +537,14 @@ class Dashboard:
         # Initializing it collapsed if there are many channels might be better, 
         # but usually users want to see them.
         card_channels = pn.Card(
+            self.channel_type_filter,
+            pn.layout.Divider(),
             pn.Row(self.btn_select_all, self.btn_select_none, sizing_mode="stretch_width"),
             self.channel_vis,
             title="📉 Channels",
             collapsed=False,
-            scroll=True,  # Enable scrolling within the card
-            max_height=300, # Limit height so it doesn't take over
+            scroll=True,
+            max_height=350,
             sizing_mode="stretch_width",
         )
 
